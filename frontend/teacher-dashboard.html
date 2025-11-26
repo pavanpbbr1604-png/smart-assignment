@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Teacher Dashboard - Smart Assignment</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f9; margin:0; }
+    header {
+      background:#1565c0; color:#fff; padding:12px 20px;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    header h1 { font-size:20px; margin:0; }
+    header button {
+      border:none; padding:6px 12px; border-radius:4px;
+      cursor:pointer; font-size:14px;
+    }
+    .logout { background:#fff; color:#1565c0; font-weight:bold; }
+    main { padding:20px; max-width:900px; margin:0 auto; }
+    .card {
+      background:#fff; padding:16px; border-radius:8px;
+      box-shadow:0 2px 8px rgba(0,0,0,.05); margin-bottom:16px;
+    }
+    h2, h3 { margin-top:0; }
+    label { display:block; margin:8px 0 4px; font-size:14px; }
+    input, textarea {
+      width:100%; padding:8px; border-radius:4px;
+      border:1px solid #ccc; font-size:14px;
+    }
+    textarea { resize:vertical; min-height:60px; }
+    button.primary {
+      margin-top:12px; padding:8px 16px;
+      border:none; border-radius:4px; background:#1565c0;
+      color:#fff; cursor:pointer; font-weight:bold;
+    }
+    button.primary:hover { opacity:0.9; }
+    table {
+      width:100%; border-collapse:collapse; margin-top:8px;
+    }
+    th, td {
+      border:1px solid #ddd; padding:8px; font-size:14px;
+      text-align:left;
+    }
+    th { background:#e3f2fd; }
+    .muted { color:#555; font-size:14px; }
+    .small { font-size:12px; color:#777; }
+    button.view-btn {
+      padding:4px 10px;
+      border:none;
+      border-radius:4px;
+      background:#1565c0;
+      color:#fff;
+      cursor:pointer;
+      font-size:13px;
+    }
+    button.view-btn:hover { opacity:0.9; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Teacher Dashboard</h1>
+    <div>
+      <span id="teacherName"></span>
+      <button class="logout" id="logoutBtn">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Welcome, <span id="welcomeName"></span> 👋</h2>
+      <p class="muted">
+        Create new assignments, view all assignments you created, and open submissions to grade students.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>Create New Assignment</h3>
+      <form id="assignmentForm">
+        <label>Title</label>
+        <input type="text" id="title" required>
+
+        <label>Description</label>
+        <textarea id="description"></textarea>
+
+        <label>Maximum Marks</label>
+        <input type="number" id="maxMarks" required>
+
+        <label>Deadline</label>
+        <input type="datetime-local" id="deadline" required>
+
+        <button type="submit" class="primary">Create Assignment</button>
+        <div id="formMsg" class="small"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>My Assignments</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Max Marks</th>
+            <th>Deadline</th>
+            <th>Created</th>
+            <th>Submissions</th>
+          </tr>
+        </thead>
+        <tbody id="assignmentsBody">
+          <tr><td colspan="5" class="muted">No assignments yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost:5000";
+
+    const rawUser = localStorage.getItem("user");
+    const token = localStorage.getItem("token");
+
+    if (!rawUser || !token) {
+      window.location.href = "login.html";
+    }
+
+    const user = JSON.parse(rawUser);
+    if (user.role !== "TEACHER") {
+      window.location.href = "login.html";
+    }
+
+    document.getElementById("teacherName").textContent = user.name;
+    document.getElementById("welcomeName").textContent = user.name;
+
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      window.location.href = "login.html";
+    });
+
+    async function loadAssignments() {
+      const tbody = document.getElementById("assignmentsBody");
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading...</td></tr>';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/assignments/teacher`, {
+          headers: {
+            "Authorization": "Bearer " + token
+          }
+        });
+
+        if (!res.ok) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">Failed to load assignments.</td></tr>';
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">No assignments yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = "";
+        data.forEach(a => {
+          const tr = document.createElement("tr");
+          const deadline = new Date(a.deadline).toLocaleString();
+          const created = new Date(a.createdAt).toLocaleString();
+          tr.innerHTML = `
+            <td>${a.title}</td>
+            <td>${a.maxMarks}</td>
+            <td>${deadline}</td>
+            <td>${created}</td>
+            <td>
+              <button class="view-btn" onclick="viewSubmissions('${a._id}')">
+                View Submissions
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error loading assignments.</td></tr>';
+      }
+    }
+
+    loadAssignments();
+
+    function viewSubmissions(assignmentId) {
+      localStorage.setItem("currentAssignment", assignmentId);
+      window.location.href = "teacher-submissions.html";
+    }
+
+    const form = document.getElementById("assignmentForm");
+    const formMsg = document.getElementById("formMsg");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      formMsg.style.color = "#777";
+      formMsg.textContent = "Saving...";
+
+      const title = document.getElementById("title").value.trim();
+      const description = document.getElementById("description").value.trim();
+      const maxMarks = document.getElementById("maxMarks").value;
+      const deadline = document.getElementById("deadline").value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/assignments`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ title, description, maxMarks, deadline })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          formMsg.style.color = "crimson";
+          formMsg.textContent = data.message || "Failed to create assignment";
+          return;
+        }
+
+        formMsg.style.color = "green";
+        formMsg.textContent = "Assignment created!";
+        form.reset();
+        loadAssignments();
+      } catch (err) {
+        formMsg.style.color = "crimson";
+        formMsg.textContent = "Network error";
+      }
+    });
+  </script>
+</body>
+</html>

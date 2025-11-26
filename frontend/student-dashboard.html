@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Dashboard - Smart Assignment</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f9; margin:0; }
+    header {
+      background:#2e7d32; color:#fff; padding:12px 20px;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    header h1 { font-size:20px; margin:0; }
+    header button {
+      border:none; padding:6px 12px; border-radius:4px;
+      cursor:pointer; font-size:14px;
+    }
+    .logout { background:#fff; color:#2e7d32; font-weight:bold; }
+    main { padding:20px; max-width:1000px; margin:0 auto; }
+    .card {
+      background:#fff; padding:16px; border-radius:8px;
+      box-shadow:0 2px 8px rgba(0,0,0,.05); margin-bottom:16px;
+    }
+    h2, h3 { margin-top:0; }
+    table {
+      width:100%; border-collapse:collapse; margin-top:8px;
+    }
+    th, td {
+      border:1px solid #ddd; padding:8px; font-size:14px;
+      text-align:left;
+    }
+    th { background:#e8f5e9; }
+    .muted { color:#555; font-size:14px; }
+    .small { font-size:12px; color:#777; }
+    button.submit-btn {
+      padding:4px 10px;
+      border:none;
+      border-radius:4px;
+      background:#2e7d32;
+      color:#fff;
+      cursor:pointer;
+      font-size:13px;
+    }
+    button.submit-btn:hover { opacity:0.9; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Student Dashboard</h1>
+    <div>
+      <span id="studentName"></span>
+      <button class="logout" id="logoutBtn">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Hello, <span id="welcomeName"></span> 📚</h2>
+      <p class="muted">
+        View all assignments from teachers, submit your work, and track your marks & feedback.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>Assignments</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Teacher</th>
+            <th>Max Marks</th>
+            <th>Deadline</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="assignmentsBody">
+          <tr><td colspan="5" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+      <p class="small">
+        Note: For now, submission is done by entering a URL (Google Drive / PDF link).
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>My Submissions & Feedback</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Assignment</th>
+            <th>Submitted At</th>
+            <th>File</th>
+            <th>Marks</th>
+            <th>Feedback</th>
+          </tr>
+        </thead>
+        <tbody id="submissionsBody">
+          <tr><td colspan="5" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost:5000";
+
+    const rawUser = localStorage.getItem("user");
+    const token = localStorage.getItem("token");
+
+    if (!rawUser || !token) {
+      window.location.href = "login.html";
+    }
+
+    const user = JSON.parse(rawUser);
+    if (user.role !== "STUDENT") {
+      window.location.href = "login.html";
+    }
+
+    document.getElementById("studentName").textContent = user.name;
+    document.getElementById("welcomeName").textContent = user.name;
+
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      window.location.href = "login.html";
+    });
+
+    async function loadAssignments() {
+      const tbody = document.getElementById("assignmentsBody");
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading...</td></tr>';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/assignments/student`, {
+          headers: {
+            "Authorization": "Bearer " + token
+          }
+        });
+
+        if (!res.ok) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">Failed to load assignments.</td></tr>';
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">No assignments available.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = "";
+        data.forEach(a => {
+          const tr = document.createElement("tr");
+          const deadline = new Date(a.deadline).toLocaleString();
+          tr.innerHTML = `
+            <td>${a.title}</td>
+            <td>${a.teacher?.name || "Teacher"}</td>
+            <td>${a.maxMarks}</td>
+            <td>${deadline}</td>
+            <td>
+              <button class="submit-btn" onclick="submitAssignment('${a._id}')">
+                Submit
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error loading assignments.</td></tr>';
+      }
+    }
+
+    async function submitAssignment(assignmentId) {
+      const fileUrl = prompt("Enter your submission link (Google Drive / PDF URL):");
+      if (!fileUrl) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/submissions/${assignmentId}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ fileUrl })
+        });
+
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
+
+        if (!res.ok) {
+          alert(data.message || `Failed to submit (status ${res.status})`);
+          return;
+        }
+
+        alert("Assignment submitted successfully!");
+        loadMySubmissions();
+      } catch (err) {
+        alert("Could not reach the server. Is backend running?");
+      }
+    }
+
+    async function loadMySubmissions() {
+      const tbody = document.getElementById("submissionsBody");
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading...</td></tr>';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/submissions/my`, {
+          headers: {
+            "Authorization": "Bearer " + token
+          }
+        });
+
+        if (!res.ok) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">Failed to load submissions.</td></tr>';
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">You have not submitted any assignments yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = "";
+        data.forEach(s => {
+          const tr = document.createElement("tr");
+          const submittedAt = new Date(s.submittedAt).toLocaleString();
+          tr.innerHTML = `
+            <td>${s.assignment?.title || "Assignment"}</td>
+            <td>${submittedAt}</td>
+            <td><a href="${s.fileUrl}" target="_blank">Open</a></td>
+            <td>${s.marks ?? "-"}</td>
+            <td>${s.feedback || "-"}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error loading submissions.</td></tr>';
+      }
+    }
+
+    loadAssignments();
+    loadMySubmissions();
+  </script>
+</body>
+</html>

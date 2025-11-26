@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Assignment Submissions - Smart Assignment</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f9; margin:0; }
+    header {
+      background:#1565c0; color:#fff; padding:12px 20px;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    header h1 { font-size:20px; margin:0; }
+    header button {
+      border:none; padding:6px 12px; border-radius:4px;
+      cursor:pointer; font-size:14px;
+    }
+    .back { background:#fff; color:#1565c0; font-weight:bold; }
+    main { padding:20px; max-width:900px; margin:0 auto; }
+    table {
+      width:100%; border-collapse:collapse; margin-top:10px;
+    }
+    th, td {
+      border:1px solid #ddd; padding:8px; font-size:14px;
+      text-align:left;
+    }
+    th { background:#e3f2fd; }
+    button.grade-btn {
+      padding:4px 10px;
+      border:none;
+      border-radius:4px;
+      background:#1565c0;
+      color:#fff;
+      cursor:pointer;
+      font-size:13px;
+    }
+    button.grade-btn:hover { opacity:0.9; }
+    .muted { color:#555; font-size:14px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Assignment Submissions</h1>
+    <button class="back" onclick="goBack()">← Back to Dashboard</button>
+  </header>
+
+  <main>
+    <p class="muted">View all student submissions for this assignment and give marks + feedback.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>File</th>
+          <th>Submitted At</th>
+          <th>Marks</th>
+          <th>Feedback</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="6" class="muted">Loading...</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost:5000";
+
+    const token = localStorage.getItem("token");
+    const rawUser = localStorage.getItem("user");
+    const assignmentId = localStorage.getItem("currentAssignment");
+
+    if (!token || !rawUser) {
+      window.location.href = "login.html";
+    }
+
+    const user = JSON.parse(rawUser);
+    if (user.role !== "TEACHER") {
+      window.location.href = "login.html";
+    }
+
+    if (!assignmentId) {
+      alert("No assignment selected.");
+      window.location.href = "teacher-dashboard.html";
+    }
+
+    function goBack() {
+      window.location.href = "teacher-dashboard.html";
+    }
+
+    async function loadSubmissions() {
+      const tbody = document.getElementById("tbody");
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">Loading...</td></tr>';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/submissions/${assignmentId}`, {
+          headers: { "Authorization": "Bearer " + token }
+        });
+
+        if (!res.ok) {
+          tbody.innerHTML = '<tr><td colspan="6" class="muted">Failed to load submissions.</td></tr>';
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="muted">No submissions yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = "";
+        data.forEach(s => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${s.student?.name || "Student"}</td>
+            <td><a href="${s.fileUrl}" target="_blank">Open</a></td>
+            <td>${new Date(s.submittedAt).toLocaleString()}</td>
+            <td>${s.marks ?? "-"}</td>
+            <td>${s.feedback || "-"}</td>
+            <td>
+              <button class="grade-btn" onclick="gradeSubmission('${s._id}')">
+                Grade / Edit
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">Error loading submissions.</td></tr>';
+      }
+    }
+
+    async function gradeSubmission(submissionId) {
+      const marks = prompt("Enter marks:");
+      if (marks === null) return;
+
+      const feedback = prompt("Enter feedback:");
+      if (feedback === null) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/submissions/${submissionId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ marks, feedback })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.message || "Failed to update");
+          return;
+        }
+
+        alert("Marks & feedback updated!");
+        loadSubmissions();
+      } catch (err) {
+        alert("Network error while updating");
+      }
+    }
+
+    loadSubmissions();
+  </script>
+</body>
+</html>
